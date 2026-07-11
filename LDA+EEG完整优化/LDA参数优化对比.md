@@ -31,6 +31,8 @@ LDA 的独有参数主要是特征构造和判别器正则化参数：
 | --- | --- |
 | `bins` | 将时间窗口划分成若干时间段，对每个通道提取分段均值特征 |
 | `shrinkage` | LDA 协方差收缩强度，用于缓解特征维度较高时的估计不稳定 |
+| `StandardScaler` | 对 LDA 输入特征做标准化，减少不同通道、不同时间段幅值尺度差异的影响 |
+| `trimmed_mean` | 字符聚合方式，去掉同一行/列多次闪烁得分中的极端值后再平均 |
 | 特征维度 | `通道数 × bins`，例如全 20 通道、12 bins 时为 240 维 |
 
 ## 优化过程与结果
@@ -42,6 +44,8 @@ LDA 的独有参数主要是特征构造和判别器正则化参数：
 第二步是通道策略优化。固定 `0-500 ms + 12 bins + shrinkage=0.03` 后，对比全 20 通道、Top-K 通道和通道加权。全 20 通道基线为 `10/12`，事件 BalAcc `0.748`，事件 AUC `0.801`，Unknown `6/8`。LDA Top-12 通道仍保持 `10/12` 和 Unknown `6/8`，但事件 BalAcc 提升到 `0.759`，事件 AUC 提升到 `0.816`，说明去掉低判别力通道后，事件排序更清晰。
 
 通道加权 `alpha=1.5` 的 Unknown 可以达到 `7/8`，但 CV 字符正确数降为 `9/12`；Top-10 也能达到 Unknown `7/8`，但 CV 字符正确数只有 `8/12`。因此这些方案可作为参考，但不作为主推荐配置。
+
+第三步是 LDA 独有参数的进一步优化。在固定 `0-500 ms + LDA Top-12` 的基础上，继续比较 `bins`、类别先验、是否使用 `StandardScaler` 以及字符聚合方式。最好的 LDA 配置为 `10 bins + shrinkage=0.03 + balanced prior + StandardScaler + trimmed_mean`，训练字符正确数达到 `11/12`，事件 BalAcc 为 `0.765`，事件 AUC 为 `0.827`，Unknown 为 `7/8`，Unknown 预测为 `2TF5CXKM`。目前已检查的 LDA 探索结果中没有发现 Unknown `8/8` 的配置。
 
 ## 窗口参数对比
 
@@ -55,6 +59,8 @@ LDA 的独有参数主要是特征构造和判别器正则化参数：
 
 ## 通道参数对比
 
+本表只比较通道策略，其他参数保持一致：`0-500 ms + 12 bins + shrinkage=0.03 + priors=0.5/0.5 + no scaler + mean 聚合`。因此它用于判断“换通道”本身的影响，不用于说明 `StandardScaler` 或 `trimmed_mean` 的贡献。
+
 | 通道策略 | TopK | 特征维度 | CV字符正确数 | CV字符准确率 | 事件BalAcc | 事件AUC | Unknown正确 | Unknown预测 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Top-12 channels | 12 | 144 | 10 | 0.833 | 0.759 | 0.816 | 6/8 | 2TF5OXGM |
@@ -67,13 +73,23 @@ LDA 的独有参数主要是特征构造和判别器正则化参数：
 | Top-6 channels | 6 | 72 | 7 | 0.583 | 0.698 | 0.766 | 4/8 | 8NF51XGM |
 | Top-4 channels | 4 | 48 | 7 | 0.583 | 0.705 | 0.762 | 5/8 | 8NF51XKM |
 
+## LDA 进一步联合优化对比
+
+本表不是单因素通道实验，而是在 `0-500 ms + LDA Top-12` 基础上进一步联合调整 `bins`、类别先验、标准化和字符聚合方式。它用于给出 LDA 的最终最优结果。由于多个参数同时变化，不能把提升单独归因于某一个参数。
+
+| 配置 | 窗口 | 通道 | bins | shrinkage | prior | scaler | 字符聚合 | 特征维度 | CV字符正确 | 事件BalAcc | 事件AUC | Unknown正确 | Unknown预测 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 通道对齐配置 | 0-500 | Top-12 | 12 | 0.03 | 0.5/0.5 | none | mean | 144 | 10/12 | 0.759 | 0.816 | 6/8 | 2TF5OXGM |
+| LDA 最优配置 | 0-500 | Top-12 | 10 | 0.03 | balanced | StandardScaler | trimmed_mean | 120 | 11/12 | 0.765 | 0.827 | 7/8 | 2TF5CXKM |
+
 ## 推荐配置
 
-LDA 推荐保留两个配置：
+LDA 推荐保留三个配置：
 
 - 稳健基线：`0-500 ms + 全 20 通道 + 12 bins + shrinkage=0.03`，结果为 CV `10/12`、事件 AUC `0.801`、Unknown `6/8`。
-- 降维优化：`0-500 ms + LDA Top-12 通道 + 12 bins + shrinkage=0.03`，结果为 CV `10/12`、事件 AUC `0.816`、Unknown `6/8`。
+- 通道对齐配置：`0-500 ms + LDA Top-12 通道 + 12 bins + shrinkage=0.03`，结果为 CV `10/12`、事件 AUC `0.816`、Unknown `6/8`。
+- LDA 最优配置：`0-500 ms + LDA Top-12 通道 + 10 bins + shrinkage=0.03 + StandardScaler + trimmed_mean`，结果为 CV `11/12`、事件 AUC `0.827`、Unknown `7/8`。
 
 ## 结论
 
-LDA 的窗口实验说明，`0-600 ms` 在训练字符上最高，但 `0-500 ms` 在事件级指标和 Unknown 泛化上更均衡，也更便于和 EEGNet 对齐。通道实验说明，Top-12 在不损失字符正确数的情况下提升了事件 BalAcc 和 AUC，因此可以作为 LDA 的主要优化配置。
+LDA 的窗口实验说明，`0-600 ms` 在训练字符上最高，但 `0-500 ms` 在事件级指标、Unknown 泛化和与 EEGNet 对齐方面更均衡。通道实验说明，Top-12 可以在降低特征维度的同时提升事件 BalAcc 和 AUC。进一步加入 `StandardScaler` 和 `trimmed_mean` 后，LDA 在 `0-500 ms + Top-12` 下达到 CV `11/12`、Unknown `7/8`，因此该配置作为 LDA 最终优化结果；`12 bins` 版本保留为与基础窗口/通道实验对齐的对照。

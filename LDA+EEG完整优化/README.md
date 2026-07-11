@@ -6,8 +6,8 @@
 
 - `LDA优化/`：优化后的 LDA 代码、实验记录、图表和表格结果。
 - `EEGNet_0_500_top3/`：优化后的 EEGNet 0-500 ms、top3 字符聚合代码、最终模型与预测文件。
-- `LDA参数优化对比.md`：同一 LDA 模型在不同窗口、分箱、shrinkage、通道策略和联合参数下的结果对比。
-- `EEGNet参数优化对比.md`：同一 EEGNet 模型在不同窗口、聚合方式、正类权重和 scheduler 下的结果对比。
+- `LDA参数优化对比.md`：LDA 在 5 个代表性时间窗口、全 20 通道和 LDA Top-12 通道下的参数与结果对比。
+- `EEGNet参数优化对比.md`：EEGNet 按 LDA 相同窗口和通道口径补跑后的参数与结果对比。
 - `figures/`：参数对比图和单字符 12 通道响应示例图。
 - `tables/`：从现有实验结果整理出的参数对比 CSV。
 
@@ -19,14 +19,21 @@
 - 结果汇总：`LDA优化/outputs/tables/summary.json`
 - 模型汇总：`LDA优化/outputs/tables/model_summary.csv`
 
-当前 LDA 盲选配置：
+当前 LDA 最优推荐配置：
 
 - 时间窗口：`0-500 ms`
-- 分箱：`8`
-- shrinkage：`auto`
+- 通道方案：`LDA Top-12`
+- 分箱：`10`
+- shrinkage：`0.03`
+- 类别先验：`balanced`
+- 特征标准化：`StandardScaler`
+- 字符聚合：`trimmed_mean`
 - 训练字符交叉验证：`11/12 = 0.917`
-- Unknown 测试集盲选结果：`6/8 = 0.750`
-- 后验备用方案：`10` 分箱、`shrinkage=0.03`，Unknown 测试集 `7/8 = 0.875`
+- 事件级 balanced accuracy：`0.765`
+- 事件级 ROC-AUC：`0.827`
+- Unknown 测试集结果：`7/8 = 0.875`
+
+补充说明：基础窗口/通道对齐实验中，`0-500 ms + LDA Top-12 + 12 bins + shrinkage=0.03` 的结果为 CV `10/12`、事件 AUC `0.816`、Unknown `6/8`。进一步加入 `StandardScaler` 和 `trimmed_mean` 后，LDA 最优配置提升到 CV `11/12`、Unknown `7/8`。目前已检查的 LDA 探索结果中未发现 Unknown `8/8` 配置。
 
 ## EEGNet 结果入口
 
@@ -48,15 +55,22 @@ python ".\EEGNet_0_500_top3\src\p300_pipeline.py" --data-dir "..\..\..\大作业
 当前 EEGNet 配置：
 
 - 时间窗口：`0-500 ms`
+- 通道方案：`LDA Top-12`
 - 字符聚合：`top3`
-- 训练字符交叉验证：`10/12 = 0.833`
-- 事件级 balanced accuracy：`0.760`
-- 事件级 ROC-AUC：`0.824`
+- 训练参数：`epochs=80`、`lr=0.001`、`dropout=0.5`、`pos_weight=1.0`
+- 训练字符交叉验证：`9/12 = 0.750`
+- 事件级 balanced accuracy：`0.762`
+- 事件级 ROC-AUC：`0.834`
+- Unknown 测试集结果：`7/8 = 0.875`
+
+补充说明：`0-600 ms + LDA Top-12` 的 EEGNet 事件 AUC 最高，为 `0.840`；但其训练字符交叉验证只有 `7/12`。综合字符验证、事件 AUC 和 Unknown 表现，主报告推荐 `0-500 ms + LDA Top-12 + top3`。
 
 ## 新增对比图
 
 - 参数对比图：`figures/model_parameter_comparison.png`
+- 0-500 ms 对齐参数对比图：`figures/aligned_0_500_parameter_comparison.png`
 - 单字符 Top-12 EEG 通道响应示例：`figures/example_char_top12_channels.png`
+- 300ms 附近 Top-12 与全 20 通道均值对比图：`figures/top12_vs_all20_mean_around_300ms.png`
 
 ## 来源
 

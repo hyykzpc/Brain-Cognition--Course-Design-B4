@@ -13,6 +13,8 @@ from sklearn.base import clone
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.metrics import average_precision_score, balanced_accuracy_score, roc_auc_score
 from sklearn.model_selection import LeaveOneGroupOut
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
 
 warnings.filterwarnings("ignore")
 
@@ -36,6 +38,16 @@ TEST_ANSWERS = {
     "Unknown6": "X",
     "Unknown7": "K",
     "Unknown8": "M",
+}
+TOP12_CHANNELS = ["Ch20", "Ch17", "Ch15", "Ch12", "Ch14", "Ch16", "Ch13", "Ch10", "Ch18", "Ch19", "Ch08", "Ch11"]
+OPTIMAL_LDA_CONFIG = {
+    "window_ms": (0, 500),
+    "bins": 10,
+    "shrinkage": 0.03,
+    "priors": [0.5, 0.5],
+    "channels": TOP12_CHANNELS,
+    "use_scaler": True,
+    "aggregation": "trimmed_mean",
 }
 
 
@@ -96,6 +108,7 @@ class Dataset:
     meta_test: pd.DataFrame
     y: np.ndarray
     groups: np.ndarray
+    channel_names: list[str]
 
 
 def load_dataset(project_root: Path) -> Dataset:
@@ -116,13 +129,50 @@ def load_dataset(project_root: Path) -> Dataset:
         meta_test=meta_test,
         y=meta_train["label"].astype(int).to_numpy(),
         groups=meta_train["trial_id"].to_numpy(),
+        channel_names=[f"Ch{i:02d}" for i in range(1, epochs.shape[1] + 1)],
     )
 
 
-def make_binned_features(x: np.ndarray, times: np.ndarray, window_ms: tuple[int, int], bins: int) -> np.ndarray:
+def channel_indices(channel_names: list[str], selected: list[str] | None = None) -> list[int]:
+    if selected is None:
+        return list(range(len(channel_names)))
+    index = {name: i for i, name in enumerate(channel_names)}
+    return [index[name] for name in selected]
+
+
+def rank_channels_by_discriminability(
+    epochs: np.ndarray,
+    y: np.ndarray,
+    times: np.ndarray,
+    window_ms: tuple[int, int],
+    top_k: int = 12,
+) -> list[int]:
+    start, stop = window_ms
+    mask = (times >= start / 1000) & (times < stop / 1000)
+    xw = epochs[:, :, mask]
+    target = xw[y == 1]
+    nontarget = xw[y == 0]
+    target_mean = target.mean(axis=0)
+    nontarget_mean = nontarget.mean(axis=0)
+    target_var = target.var(axis=0)
+    nontarget_var = nontarget.var(axis=0)
+    pooled = np.sqrt((target_var + nontarget_var) / 2) + 1e-8
+    score = np.mean(np.abs(target_mean - nontarget_mean) / pooled, axis=1)
+    return np.argsort(score)[::-1][:top_k].tolist()
+
+
+def make_binned_features(
+    x: np.ndarray,
+    times: np.ndarray,
+    window_ms: tuple[int, int],
+    bins: int,
+    channels: list[int] | None = None,
+) -> np.ndarray:
     start, stop = window_ms
     mask = (times >= start / 1000) & (times < stop / 1000)
     xw = x[:, :, mask]
+    if channels is not None:
+        xw = xw[:, channels, :]
     edges = np.linspace(0, xw.shape[2], bins + 1, dtype=int)
     parts = [xw[:, :, edges[i] : edges[i + 1]].mean(axis=2) for i in range(bins) if edges[i] < edges[i + 1]]
     return np.concatenate(parts, axis=1).astype(np.float32)
@@ -134,14 +184,31 @@ def model_scores(model, x: np.ndarray) -> np.ndarray:
     return np.asarray(model.predict_proba(x)[:, 1]).ravel() - 0.5
 
 
-def decode_characters(scores: np.ndarray, meta: pd.DataFrame, has_target: bool = True) -> pd.DataFrame:
+def aggregate_scores(values: pd.Series, method: str) -> float:
+    arr = np.asarray(values, dtype=float)
+    if method == "mean":
+        return float(arr.mean())
+    if method == "trimmed_mean":
+        if arr.size <= 2:
+            return float(arr.mean())
+        arr = np.sort(arr)
+        return float(arr[1:-1].mean())
+    raise ValueError(f"Unknown aggregation method: {method}")
+
+
+def decode_characters(
+    scores: np.ndarray,
+    meta: pd.DataFrame,
+    has_target: bool = True,
+    aggregation: str = "mean",
+) -> pd.DataFrame:
     frame = meta[["trial_id", "sheet", "event_id"]].copy()
     if "target_char" in meta:
         frame["target"] = meta["target_char"].to_numpy()
     frame["score"] = scores
     rows = []
     for trial_id, g in frame.groupby("trial_id", sort=True):
-        event_score = g.groupby("event_id")["score"].mean().reindex(range(1, 13))
+        event_score = g.groupby("event_id")["score"].apply(lambda s: aggregate_scores(s, aggregation)).reindex(range(1, 13))
         row_id = int(event_score.iloc[:6].idxmax())
         col_id = int(event_score.iloc[6:].idxmax())
         sorted_rows = event_score.iloc[:6].sort_values(ascending=False)
@@ -164,9 +231,9 @@ def decode_characters(scores: np.ndarray, meta: pd.DataFrame, has_target: bool =
     return pd.DataFrame(rows)
 
 
-def metric_bundle(y: np.ndarray, scores: np.ndarray, meta: pd.DataFrame) -> dict[str, float | int]:
+def metric_bundle(y: np.ndarray, scores: np.ndarray, meta: pd.DataFrame, aggregation: str = "mean") -> dict[str, float | int]:
     pred = (scores >= 0).astype(int)
-    decoded = decode_characters(scores, meta, has_target=True)
+    decoded = decode_characters(scores, meta, has_target=True, aggregation=aggregation)
     correct = int(decoded["correct"].sum())
     return {
         "balanced_accuracy": float(balanced_accuracy_score(y, pred)),
@@ -178,11 +245,26 @@ def metric_bundle(y: np.ndarray, scores: np.ndarray, meta: pd.DataFrame) -> dict
     }
 
 
-def loo_lda(dataset: Dataset, window_ms: tuple[int, int], bins: int, shrinkage, priors) -> tuple[np.ndarray, np.ndarray]:
-    x_feat = make_binned_features(dataset.epochs_train, dataset.times, window_ms, bins)
+def make_lda_estimator(shrinkage, priors, use_scaler: bool = False):
+    lda = LinearDiscriminantAnalysis(solver="lsqr", shrinkage=shrinkage, priors=priors)
+    if not use_scaler:
+        return lda
+    return Pipeline([("scale", StandardScaler()), ("lda", lda)])
+
+
+def loo_lda(
+    dataset: Dataset,
+    window_ms: tuple[int, int],
+    bins: int,
+    shrinkage,
+    priors,
+    channels: list[int] | None = None,
+    use_scaler: bool = False,
+) -> tuple[np.ndarray, np.ndarray]:
+    x_feat = make_binned_features(dataset.epochs_train, dataset.times, window_ms, bins, channels)
     scores = np.zeros(len(dataset.y), dtype=float)
     outer = LeaveOneGroupOut()
-    estimator = LinearDiscriminantAnalysis(solver="lsqr", shrinkage=shrinkage, priors=priors)
+    estimator = make_lda_estimator(shrinkage, priors, use_scaler=use_scaler)
     for train_idx, valid_idx in outer.split(x_feat, dataset.y, dataset.groups):
         fit = clone(estimator).fit(x_feat[train_idx], dataset.y[train_idx])
         scores[valid_idx] = model_scores(fit, x_feat[valid_idx])
@@ -220,12 +302,13 @@ def evaluate_lda_grid(dataset: Dataset) -> tuple[pd.DataFrame, dict]:
 
 
 def fit_lda_predict_test(dataset: Dataset, best: dict) -> tuple[pd.DataFrame, np.ndarray]:
-    x_train = make_binned_features(dataset.epochs_train, dataset.times, best["window_ms"], best["bins"])
-    x_test = make_binned_features(dataset.epochs_test, dataset.times, best["window_ms"], best["bins"])
-    model = LinearDiscriminantAnalysis(solver="lsqr", shrinkage=best["shrinkage"], priors=[0.5, 0.5])
+    channels = best.get("channel_indices")
+    x_train = make_binned_features(dataset.epochs_train, dataset.times, best["window_ms"], best["bins"], channels)
+    x_test = make_binned_features(dataset.epochs_test, dataset.times, best["window_ms"], best["bins"], channels)
+    model = make_lda_estimator(best["shrinkage"], best.get("priors", [0.5, 0.5]), use_scaler=best.get("use_scaler", False))
     model.fit(x_train, dataset.y)
     scores = model_scores(model, x_test)
-    return decode_characters(scores, dataset.meta_test, has_target=False), scores
+    return decode_characters(scores, dataset.meta_test, has_target=False, aggregation=best.get("aggregation", "mean")), scores
 
 
 def evaluate_test_answers(pred: pd.DataFrame, model_name: str) -> pd.DataFrame:
@@ -264,6 +347,63 @@ def evaluate_posthoc_lda(dataset: Dataset) -> tuple[pd.DataFrame, pd.DataFrame]:
         ]
     )
     return summary, test_eval
+
+
+def evaluate_optimal_lda(dataset: Dataset) -> tuple[dict, pd.DataFrame, pd.DataFrame]:
+    config = dict(OPTIMAL_LDA_CONFIG)
+    scores = np.zeros(len(dataset.y), dtype=float)
+    outer = LeaveOneGroupOut()
+    estimator = make_lda_estimator(config["shrinkage"], config["priors"], use_scaler=config["use_scaler"])
+    for train_idx, valid_idx in outer.split(dataset.epochs_train, dataset.y, dataset.groups):
+        fold_channels = rank_channels_by_discriminability(
+            dataset.epochs_train[train_idx],
+            dataset.y[train_idx],
+            dataset.times,
+            config["window_ms"],
+            top_k=len(config["channels"]),
+        )
+        x_train = make_binned_features(
+            dataset.epochs_train[train_idx],
+            dataset.times,
+            config["window_ms"],
+            config["bins"],
+            fold_channels,
+        )
+        x_valid = make_binned_features(
+            dataset.epochs_train[valid_idx],
+            dataset.times,
+            config["window_ms"],
+            config["bins"],
+            fold_channels,
+        )
+        fit = clone(estimator).fit(x_train, dataset.y[train_idx])
+        scores[valid_idx] = model_scores(fit, x_valid)
+
+    config["channel_indices"] = channel_indices(dataset.channel_names, config["channels"])
+    train_metrics = metric_bundle(dataset.y, scores, dataset.meta_train, aggregation=config["aggregation"])
+    train_pred = decode_characters(scores, dataset.meta_train, has_target=True, aggregation=config["aggregation"])
+    test_pred, _ = fit_lda_predict_test(dataset, config)
+    test_eval = evaluate_test_answers(test_pred, "Optimal LDA")
+    summary = {
+        "model": "Optimal LDA",
+        "window_ms": f"{config['window_ms'][0]}-{config['window_ms'][1]}",
+        "channels": ",".join(config["channels"]),
+        "bins": config["bins"],
+        "shrinkage": config["shrinkage"],
+        "priors": "0.5/0.5",
+        "scaler": "StandardScaler",
+        "aggregation": config["aggregation"],
+        "feature_dim": len(config["channels"]) * config["bins"],
+        "train_character_correct": train_metrics["character_correct"],
+        "train_character_accuracy": train_metrics["character_accuracy"],
+        "train_pr_auc": train_metrics["pr_auc"],
+        "train_roc_auc": train_metrics["roc_auc"],
+        "train_balanced_accuracy": train_metrics["balanced_accuracy"],
+        "test_character_correct": int(test_eval["correct"].sum()),
+        "test_character_accuracy": float(test_eval["correct"].mean()),
+        "test_predictions": "".join(test_eval["prediction"]),
+    }
+    return summary, train_pred, test_eval
 
 
 def plot_window_grid(grid: pd.DataFrame, fig_dir: Path) -> None:
@@ -351,13 +491,14 @@ def main() -> None:
     configure_plotting()
 
     project_root = find_project_root()
-    out_root = project_root / "LDA优化+EEGnet改动"
+    out_root = Path(__file__).resolve().parent
     table_dir = out_root / "outputs" / "tables"
     fig_dir = out_root / "outputs" / "figures"
     table_dir.mkdir(parents=True, exist_ok=True)
     fig_dir.mkdir(parents=True, exist_ok=True)
 
     dataset = load_dataset(project_root)
+    optimal_summary, optimal_train_pred, optimal_test_eval = evaluate_optimal_lda(dataset)
     lda_grid, best = evaluate_lda_grid(dataset)
     lda_grid.to_csv(table_dir / "lda_window_grid.csv", index=False, encoding="utf-8-sig")
     lda_pred = decode_characters(best["scores"], dataset.meta_train, has_target=True)
@@ -368,6 +509,9 @@ def main() -> None:
 
     model_summary = pd.DataFrame(rows)
     model_summary.to_csv(table_dir / "model_summary.csv", index=False, encoding="utf-8-sig")
+    pd.DataFrame([optimal_summary]).to_csv(table_dir / "optimal_lda_summary.csv", index=False, encoding="utf-8-sig")
+    optimal_train_pred.to_csv(table_dir / "optimal_lda_train_predictions.csv", index=False, encoding="utf-8-sig")
+    optimal_test_eval.to_csv(table_dir / "optimal_lda_test_answer_evaluation.csv", index=False, encoding="utf-8-sig")
     test_pred, _ = fit_lda_predict_test(dataset, best)
     test_pred.to_csv(table_dir / "unknown_test_predictions_by_optimized_lda.csv", index=False, encoding="utf-8-sig")
     locked_test_eval = evaluate_test_answers(test_pred, "Locked optimized LDA")
@@ -412,11 +556,13 @@ def main() -> None:
         },
         "unknown_test_predictions_by_optimized_lda": test_pred.to_dict(orient="records"),
         "test_answer_evaluation": answer_comparison.to_dict(orient="records"),
+        "optimal_lda": optimal_summary,
     }
     with open(table_dir / "summary.json", "w", encoding="utf-8") as f:
         json.dump(report, f, ensure_ascii=False, indent=2)
 
     print(json.dumps(report["selected_lda"], ensure_ascii=False, indent=2))
+    print(json.dumps(report["optimal_lda"], ensure_ascii=False, indent=2))
     print(test_pred[["sheet", "prediction", "predicted_row", "predicted_col", "mean_margin"]].to_string(index=False))
 
 

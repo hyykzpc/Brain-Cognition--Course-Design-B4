@@ -20,18 +20,27 @@ python ".\LDA优化\run_lda_pipeline.py"
 - `LDA优化/outputs/tables/`
 - `LDA优化/outputs/figures/`
 
-## 当前 LDA 配置
+## 当前 LDA 最优配置
 
 - 刺激区间：`0-500 ms`
-- 特征：20 通道 x 8 个时间分箱
-- LDA：`solver="lsqr"`，`shrinkage="auto"`，类别先验 `[0.5, 0.5]`
+- 通道：`Top-12 channels`
+- 特征：12 通道 x 10 个时间分箱
+- 特征标准化：`StandardScaler`
+- LDA：`solver="lsqr"`，`shrinkage=0.03`，类别先验 `[0.5, 0.5]`
+- 字符聚合：`trimmed_mean`
 - 验证：leave-one-character-out，按完整字符 trial 分组
 
 ## 当前结果
 
 - 训练字符交叉验证：`11/12 = 0.917`
-- Unknown 测试集盲选结果：`6/8 = 0.750`
-- 后验备用方案：`0-500 ms`、`10` 分箱、`shrinkage=0.03`，测试集 `7/8 = 0.875`
+- Unknown 测试集参考结果：`7/8 = 0.875`
+- Unknown 预测：`2TF5CXKM`
+
+脚本仍保留基础窗口网格搜索和 12 bins 通道对齐实验输出；同时会额外输出最优 LDA 配置：
+
+- `outputs/tables/optimal_lda_summary.csv`
+- `outputs/tables/optimal_lda_train_predictions.csv`
+- `outputs/tables/optimal_lda_test_answer_evaluation.csv`
 
 ## 结果记录
 
