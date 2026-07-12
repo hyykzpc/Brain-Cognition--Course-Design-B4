@@ -1,0 +1,3 @@
+﻿model,window_ms,bins,shrinkage,train_character_correct,train_character_accuracy,train_pr_auc,train_roc_auc,train_balanced_accuracy,test_character_correct,test_character_accuracy,test_predictions,note
+Locked optimized LDA,0-500,12,0.08,9,0.75,0.4840350616384129,0.7983888888888888,0.7250000000000001,6,0.75,2NF5OXKM,Blind selection result before test answers were supplied.
+Posthoc LDA 7/8,0-500,10,0.03,9,0.75,0.514764959501654,0.7965972222222223,0.7383333333333333,6,0.75,2BF5UXKM,Post-hoc after test answers were revealed; not a blind model-selection result.

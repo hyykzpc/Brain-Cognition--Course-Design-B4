@@ -62,6 +62,18 @@ EEGNet 具体训练参数：
 | F2 | 16 |
 | 输入形状 | 20 通道 x 62 时间点 |
 
+## EEGNet 训练过程
+
+最优 EEGNet 配置在全部训练字符上重训 80 个 epoch，并记录每轮训练集 BCE loss、Accuracy、Balanced Accuracy 和 ROC-AUC。
+
+训练损失曲线：
+
+![最优 EEGNet 训练损失曲线](./figures/eegnet_training_loss.png)
+
+训练指标曲线：
+
+![最优 EEGNet 训练指标曲线](./figures/eegnet_training_metrics.png)
+
 ## Unknown 预测
 
 - Unknown1 = 2 (字符置信度=0.106, 行概率=0.323, 列概率=0.328, 行得分=0.804, 列得分=0.905, 行margin=0.111, 列margin=0.441)
@@ -80,4 +92,8 @@ EEGNet 具体训练参数：
 - test_predictions.csv: 8 个 Unknown 的最终预测
 - test_event_scores.csv: 测试集每个闪烁事件的模型得分
 - model.pkl: 使用全部训练字符重训后的最终模型
+- tables/eegnet_training_history.csv: 最优 EEGNet 每轮训练指标
+- figures/eegnet_training_loss.png: 最优 EEGNet 训练损失曲线图
+- figures/eegnet_training_metrics.png: 最优 EEGNet 训练指标曲线图
+- scripts/plot_eegnet_training.py: 最优 EEGNet 训练过程绘图脚本
 

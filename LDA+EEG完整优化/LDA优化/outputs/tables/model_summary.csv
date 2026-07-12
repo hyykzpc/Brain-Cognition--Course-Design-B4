@@ -1,0 +1,2 @@
+﻿model,balanced_accuracy,roc_auc,pr_auc,character_accuracy,character_correct,n_characters
+Optimized LDA,0.7250000000000001,0.7983888888888888,0.4840350616384129,0.75,9,12

@@ -1,0 +1,2 @@
+﻿model,window_ms,channels,bins,shrinkage,priors,scaler,aggregation,feature_dim,train_character_correct,train_character_accuracy,train_pr_auc,train_roc_auc,train_balanced_accuracy,test_character_correct,test_character_accuracy,test_predictions
+Optimal LDA,0-500,"Ch20,Ch17,Ch15,Ch12,Ch14,Ch16,Ch13,Ch10,Ch18,Ch19,Ch08,Ch11",10,0.03,0.5/0.5,StandardScaler,trimmed_mean,120,11,0.9166666666666666,0.4906257470257095,0.8267777777777778,0.765,7,0.875,2TF5CXKM

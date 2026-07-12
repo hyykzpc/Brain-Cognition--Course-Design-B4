@@ -1,0 +1,13 @@
+﻿模型,窗口,通道,通道数,时间参数,共享参数,模型独有参数,CV字符正确,事件BalAcc,事件AUC,Unknown正确,Unknown预测
+LDA,0-500,all20,20,12 bins,"window=0-500, channels=all20","shrinkage=0.03, priors=0.5/0.5",10/12,0.7475,0.8014583333333334,6/8,2BF5UXKM
+LDA,0-500,LDA Top-12,12,12 bins,"window=0-500, channels=LDA Top-12","shrinkage=0.03, priors=0.5/0.5",10/12,0.7591666666666667,0.8158472222222223,6/8,2TF5OXGM
+EEGNet,0-400,all20,20,62 samples,"window=0-400, channels=all20, aggregation=top3","epochs=80, lr=0.001, dropout=0.5, pos_weight=1.0",9/12,0.74,0.8085694444444445,6/8,2BF5I4KM
+EEGNet,0-400,LDA Top-12,12,62 samples,"window=0-400, channels=LDA Top-12, aggregation=top3","epochs=80, lr=0.001, dropout=0.5, pos_weight=1.0",7/12,0.7558333333333334,0.8278611111111112,7/8,2TF5CXKM
+EEGNet,0-500,all20,20,62 samples,"window=0-500, channels=all20, aggregation=top3","epochs=80, lr=0.001, dropout=0.5, pos_weight=1.0",8/12,0.725,0.8025416666666667,5/8,2BF5C4KM
+EEGNet,0-500,LDA Top-12,12,62 samples,"window=0-500, channels=LDA Top-12, aggregation=top3","epochs=80, lr=0.001, dropout=0.5, pos_weight=1.0",9/12,0.7616666666666667,0.8343194444444445,7/8,2TF5CXKM
+EEGNet,0-600,all20,20,62 samples,"window=0-600, channels=all20, aggregation=top3","epochs=80, lr=0.001, dropout=0.5, pos_weight=1.0",8/12,0.7258333333333333,0.7996666666666666,4/8,VTL5C0KM
+EEGNet,0-600,LDA Top-12,12,62 samples,"window=0-600, channels=LDA Top-12, aggregation=top3","epochs=80, lr=0.001, dropout=0.5, pos_weight=1.0",7/12,0.7625,0.8397499999999999,6/8,2TF5C0KM
+EEGNet,100-500,all20,20,62 samples,"window=100-500, channels=all20, aggregation=top3","epochs=80, lr=0.001, dropout=0.5, pos_weight=1.0",6/12,0.7166666666666667,0.782861111111111,6/8,2TF5ILEM
+EEGNet,100-500,LDA Top-12,12,62 samples,"window=100-500, channels=LDA Top-12, aggregation=top3","epochs=80, lr=0.001, dropout=0.5, pos_weight=1.0",7/12,0.7141666666666666,0.8041527777777779,6/8,2TF5CLKM
+EEGNet,150-450,all20,20,62 samples,"window=150-450, channels=all20, aggregation=top3","epochs=80, lr=0.001, dropout=0.5, pos_weight=1.0",5/12,0.7358333333333333,0.7817777777777778,6/8,2TL5I4KM
+EEGNet,150-450,LDA Top-12,12,62 samples,"window=150-450, channels=LDA Top-12, aggregation=top3","epochs=80, lr=0.001, dropout=0.5, pos_weight=1.0",6/12,0.73,0.7856388888888889,5/8,2TL5C0KM
